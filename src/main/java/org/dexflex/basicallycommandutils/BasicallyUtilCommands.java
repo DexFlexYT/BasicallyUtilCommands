@@ -15,6 +15,7 @@ public class BasicallyUtilCommands implements ModInitializer {
 			RaycastCommand.register(dispatcher);
 			CheckForBlockCommand.register(dispatcher, registryAccess, environment);
 			DistanceCommand.register(dispatcher, registryAccess, environment);
+			HealCommand.register(dispatcher, registryAccess, environment);
 		});
 		LOGGER.info("BasicallyUtilCommands initialized");
 	}
