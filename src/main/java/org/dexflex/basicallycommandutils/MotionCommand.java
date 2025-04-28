@@ -22,7 +22,7 @@ public class MotionCommand {
         dispatcher.register(CommandManager.literal("motion")
                 .requires(source -> source.hasPermissionLevel(2))
                 .then(CommandManager.argument("targets", EntityArgumentType.entities())
-                        .then(CommandManager.argument("strength", FloatArgumentType.floatArg(0))
+                        .then(CommandManager.argument("strength", FloatArgumentType.floatArg())
                                 .executes(MotionCommand::execute)
                         )
                 )
