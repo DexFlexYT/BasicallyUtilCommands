@@ -13,7 +13,7 @@ public class BasicallyUtilCommands implements ModInitializer {
 	public void onInitialize() {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			RaycastCommand.register(dispatcher);
-			CheckForBlockCommand.register(dispatcher, registryAccess, environment);
+			CheckCommand.register(dispatcher, registryAccess);
 			DistanceCommand.register(dispatcher, registryAccess, environment);
 			HealCommand.register(dispatcher, registryAccess, environment);
 			MotionCommand.register(dispatcher, registryAccess, environment);
