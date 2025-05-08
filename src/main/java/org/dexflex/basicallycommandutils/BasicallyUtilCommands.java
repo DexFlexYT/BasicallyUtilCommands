@@ -17,6 +17,7 @@ public class BasicallyUtilCommands implements ModInitializer {
 			DistanceCommand.register(dispatcher, registryAccess, environment);
 			HealCommand.register(dispatcher, registryAccess, environment);
 			MotionCommand.register(dispatcher, registryAccess, environment);
+			IgniteCommand.register(dispatcher, registryAccess);
 		});
 		LOGGER.info("BasicallyUtilCommands initialized");
 	}
