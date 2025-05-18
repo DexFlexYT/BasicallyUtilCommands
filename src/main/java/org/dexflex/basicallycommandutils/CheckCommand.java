@@ -85,8 +85,7 @@ public class CheckCommand {
 
         final int result = hits;
         source.sendFeedback(() ->
-                        Text.literal(String.format("Found  %d intersections.",
-                                x, y, z, result)),
+                        Text.literal(String.format("Found %d intersections.", result)),
                 false
         );
         return result;

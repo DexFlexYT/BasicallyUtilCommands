@@ -27,7 +27,7 @@ public class RaycastCommand {
                                             ServerWorld world = source.getWorld();
                                             int steps = IntegerArgumentType.getInteger(ctx, "steps");
                                             float stepLength = FloatArgumentType.getFloat(ctx, "step_length");
-                                            Collection<CommandFunction<ServerCommandSource>> functions = CommandFunctionArgumentType.getFunctions(ctx, "function");
+                                            Collection<CommandFunction> functions = CommandFunctionArgumentType.getFunctions(ctx, "function");
                                             EntityAnchorArgumentType.EntityAnchor anchor = source.getEntityAnchor();
                                             Vec3d startPos = anchor.positionAt(source);
                                             Vec2f rot = source.getRotation();
@@ -44,7 +44,7 @@ public class RaycastCommand {
                 )
         );
     }
-    private static void runRaycastStep(ServerWorld world, ServerCommandSource originalSource, Collection<CommandFunction<ServerCommandSource>> functions,
+    private static void runRaycastStep(ServerWorld world, ServerCommandSource originalSource, Collection<CommandFunction> functions,
                                        Vec3d startPos, Vec3d dir, float stepLength, int maxSteps, int currentStep, UUID markerId) {
         if (currentStep >= maxSteps) return;
         MarkerEntity marker = (MarkerEntity) world.getEntity(markerId);
@@ -53,7 +53,7 @@ public class RaycastCommand {
         }
         Vec3d stepPos = startPos.add(dir.multiply(currentStep * stepLength));
         ServerCommandSource stepSource = originalSource.withPosition(stepPos);
-        for (CommandFunction<ServerCommandSource> function : functions) {
+        for (CommandFunction function : functions) {
             world.getServer().getCommandFunctionManager().execute(function, stepSource.withSilent());
         }
         world.getServer().submit(() -> runRaycastStep(world, originalSource, functions, startPos, dir, stepLength, maxSteps, currentStep + 1, markerId));
