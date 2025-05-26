@@ -21,24 +21,32 @@ public class MotionCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher, CommandRegistryAccess registryAccess, RegistrationEnvironment environment) {
         dispatcher.register(CommandManager.literal("motion")
                 .requires(source -> source.hasPermissionLevel(2))
-                .then(CommandManager.argument("targets", EntityArgumentType.entities())
-                        .then(CommandManager.argument("strength", FloatArgumentType.floatArg())
-                                .executes(MotionCommand::execute)
-                        )
+
+                // /motion set <targets> <strength>
+                .then(CommandManager.literal("set")
+                        .then(CommandManager.argument("targets", EntityArgumentType.entities())
+                                .then(CommandManager.argument("strength", FloatArgumentType.floatArg())
+                                        .executes(ctx -> execute(ctx, false))
+                                ))
+                )
+
+                // /motion add <targets> <strength>
+                .then(CommandManager.literal("add")
+                        .then(CommandManager.argument("targets", EntityArgumentType.entities())
+                                .then(CommandManager.argument("strength", FloatArgumentType.floatArg())
+                                        .executes(ctx -> execute(ctx, true))
+                                ))
                 )
         );
     }
 
-    private static int execute(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+    private static int execute(CommandContext<ServerCommandSource> context, boolean additive) throws CommandSyntaxException {
         Collection<? extends Entity> entities = EntityArgumentType.getEntities(context, "targets");
         float strength = FloatArgumentType.getFloat(context, "strength");
 
         Vec2f rot = context.getSource().getRotation();
-        float yaw = rot.y;
-        float pitch = rot.x;
-
-        float yawRad = (float) Math.toRadians(-yaw);
-        float pitchRad = (float) Math.toRadians(-pitch);
+        float yawRad = (float) Math.toRadians(-rot.y);
+        float pitchRad = (float) Math.toRadians(-rot.x);
 
         double x = Math.cos(pitchRad) * Math.sin(yawRad);
         double y = Math.sin(pitchRad);
@@ -47,12 +55,18 @@ public class MotionCommand {
         Vec3d direction = new Vec3d(x, y, z).normalize().multiply(strength);
 
         for (Entity entity : entities) {
-            entity.addVelocity(direction.x, direction.y, direction.z);
+            if (additive) {
+                entity.addVelocity(direction.x, direction.y, direction.z);
+            } else {
+                Vec3d currentVel = entity.getVelocity();
+                Vec3d adjustment = direction.subtract(currentVel);
+                entity.addVelocity(adjustment.x, adjustment.y, adjustment.z);
+            }
             entity.velocityModified = true;
         }
 
         context.getSource().sendFeedback(
-                () -> Text.literal("Launched " + entities.size() + " entities with strength " + strength),
+                () -> Text.literal((additive ? "Added" : "Set") + " motion for " + entities.size() + " entities with strength " + strength),
                 true
         );
 

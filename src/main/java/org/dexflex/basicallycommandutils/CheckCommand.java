@@ -58,7 +58,7 @@ public class CheckCommand {
         }
 
         final int found = count;
-        final int dist  = distance;
+        final int dist = distance;
         source.sendFeedback(
                 () -> Text.literal("Found " + found + " matching blocks within " + dist + " blocks."),
                 false
@@ -68,8 +68,6 @@ public class CheckCommand {
 
     private static int executeIntersection(CommandContext<ServerCommandSource> ctx) throws CommandSyntaxException {
         ServerCommandSource source = ctx.getSource();
-        ServerWorld world = source.getWorld();
-
         Vec3d pos = source.getPosition();
         double x = pos.x, y = pos.y, z = pos.z;
 
@@ -85,11 +83,9 @@ public class CheckCommand {
 
         final int result = hits;
         source.sendFeedback(() ->
-                        Text.literal(String.format("Found  %d intersections.",
-                                x, y, z, result)),
+                        Text.literal(String.format("Found %d intersections.", result)),
                 false
         );
         return result;
     }
-
 }
