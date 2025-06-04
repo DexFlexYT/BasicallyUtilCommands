@@ -12,13 +12,14 @@ public class BasicallyUtilCommands implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-			RaycastCommand.register(dispatcher);
+			RaycastCommand.register(dispatcher,registryAccess,environment);
 			CheckCommand.register(dispatcher, registryAccess);
 			DistanceCommand.register(dispatcher, registryAccess, environment);
 			HealCommand.register(dispatcher, registryAccess, environment);
 			MotionCommand.register(dispatcher, registryAccess, environment);
 			IgniteCommand.register(dispatcher, registryAccess);
 			EntitifyCommand.register(dispatcher, registryAccess, environment);
+			RandCommand.register(dispatcher, registryAccess, environment);
 		});
 		LOGGER.info("BasicallyUtilCommands initialized");
 	}
