@@ -68,7 +68,6 @@ public class CheckCommand {
 
     private static int executeIntersection(CommandContext<ServerCommandSource> ctx) throws CommandSyntaxException {
         ServerCommandSource source = ctx.getSource();
-        ServerWorld world = source.getWorld();
 
         Vec3d pos = source.getPosition();
         double x = pos.x, y = pos.y, z = pos.z;
