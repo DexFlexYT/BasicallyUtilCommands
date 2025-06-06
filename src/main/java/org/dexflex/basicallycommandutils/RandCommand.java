@@ -3,18 +3,17 @@ package org.dexflex.basicallycommandutils;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import net.minecraft.command.CommandRegistryAccess;
+import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
-import com.mojang.brigadier.context.CommandContext;
 
 import java.util.Random;
 
 public class RandCommand {
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher, CommandRegistryAccess access, CommandManager.RegistrationEnvironment env) {
+    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         LiteralArgumentBuilder<ServerCommandSource> rand = CommandManager.literal("rand")
                 .requires(source -> source.hasPermissionLevel(2));
 

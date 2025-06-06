@@ -20,7 +20,6 @@ public class RaycastCommand {
                 .requires(source -> source.hasPermissionLevel(2))
                 .then(CommandManager.argument("steps", IntegerArgumentType.integer(1))
                         .then(CommandManager.argument("step_length", FloatArgumentType.floatArg(0.01f))
-                                .then(CommandManager.literal("run")
                                         .then(CommandManager.argument("command", StringArgumentType.greedyString())
                                                 .executes(ctx -> {
                                                     int steps = IntegerArgumentType.getInteger(ctx, "steps");
@@ -46,12 +45,15 @@ public class RaycastCommand {
                                         )
                                 )
                         )
-                )
         );
     }
     private static void runRaycastStep(ServerWorld world, ServerCommandSource originalSource, String command,
                                        Vec3d startPos, Vec3d dir, float stepLength, int maxSteps, int currentStep, UUID markerId) {
-        if (currentStep >= maxSteps) return;
+        if (currentStep >= maxSteps) {
+            MarkerEntity marker = (MarkerEntity) world.getEntity(markerId);
+            if (marker != null) marker.discard();
+            return;
+        }
 
         MarkerEntity marker = (MarkerEntity) world.getEntity(markerId);
         if (marker == null || !marker.isAlive()) return;
@@ -60,8 +62,11 @@ public class RaycastCommand {
         ServerCommandSource stepSource = originalSource.withPosition(stepPos).withEntity(marker);
         world.getServer().getCommandManager().executeWithPrefix(stepSource.withSilent(), command);
 
+        if (!marker.isAlive()) return;
+
         world.getServer().submit(() ->
                 runRaycastStep(world, originalSource, command, startPos, dir, stepLength, maxSteps, currentStep + 1, markerId)
         );
     }
+
 }
