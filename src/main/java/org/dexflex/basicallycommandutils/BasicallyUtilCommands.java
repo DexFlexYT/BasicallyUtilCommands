@@ -20,6 +20,8 @@ public class BasicallyUtilCommands implements ModInitializer {
 			IgniteCommand.register(dispatcher);
 			EntitifyCommand.register(dispatcher);
 			RandCommand.register(dispatcher);
+			ForceGlideCommand.register(dispatcher);
+			ForceCrawlCommand.register(dispatcher);
 		});
 		LOGGER.info("BasicallyUtilCommands initialized");
 	}

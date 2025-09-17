@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.command.argument.Vec3ArgumentType;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -20,37 +21,48 @@ public class MotionCommand {
         dispatcher.register(CommandManager.literal("motion")
                 .requires(source -> source.hasPermissionLevel(2))
 
-                // /motion set <targets> <strength>
+                // /motion set <targets> <strength> [direction]
                 .then(CommandManager.literal("set")
                         .then(CommandManager.argument("targets", EntityArgumentType.entities())
                                 .then(CommandManager.argument("strength", FloatArgumentType.floatArg())
-                                        .executes(ctx -> execute(ctx, false))
+                                        .executes(ctx -> execute(ctx, false, null))
+                                        .then(CommandManager.argument("direction", Vec3ArgumentType.vec3())
+                                                .executes(ctx -> execute(ctx, false, Vec3ArgumentType.getVec3(ctx, "direction")))
+                                        )
                                 ))
                 )
 
-                // /motion add <targets> <strength>
+                // /motion add <targets> <strength> [direction]
                 .then(CommandManager.literal("add")
                         .then(CommandManager.argument("targets", EntityArgumentType.entities())
                                 .then(CommandManager.argument("strength", FloatArgumentType.floatArg())
-                                        .executes(ctx -> execute(ctx, true))
+                                        .executes(ctx -> execute(ctx, true, null))
+                                        .then(CommandManager.argument("direction", Vec3ArgumentType.vec3())
+                                                .executes(ctx -> execute(ctx, true, Vec3ArgumentType.getVec3(ctx, "direction")))
+                                        )
                                 ))
                 )
         );
     }
 
-    private static int execute(CommandContext<ServerCommandSource> context, boolean additive) throws CommandSyntaxException {
+    private static int execute(CommandContext<ServerCommandSource> context, boolean additive, Vec3d inputDirection) throws CommandSyntaxException {
         Collection<? extends Entity> entities = EntityArgumentType.getEntities(context, "targets");
         float strength = FloatArgumentType.getFloat(context, "strength");
 
-        Vec2f rot = context.getSource().getRotation();
-        float yawRad = (float) Math.toRadians(-rot.y);
-        float pitchRad = (float) Math.toRadians(-rot.x);
+        Vec3d direction;
+        if (inputDirection != null) {
+            direction = inputDirection.normalize().multiply(strength);
+        } else {
+            Vec2f rot = context.getSource().getRotation();
+            float yawRad = (float) Math.toRadians(-rot.y);
+            float pitchRad = (float) Math.toRadians(-rot.x);
 
-        double x = Math.cos(pitchRad) * Math.sin(yawRad);
-        double y = Math.sin(pitchRad);
-        double z = Math.cos(pitchRad) * Math.cos(yawRad);
+            double x = Math.cos(pitchRad) * Math.sin(yawRad);
+            double y = Math.sin(pitchRad);
+            double z = Math.cos(pitchRad) * Math.cos(yawRad);
 
-        Vec3d direction = new Vec3d(x, y, z).normalize().multiply(strength);
+            direction = new Vec3d(x, y, z).normalize().multiply(strength);
+        }
 
         for (Entity entity : entities) {
             if (additive) {
