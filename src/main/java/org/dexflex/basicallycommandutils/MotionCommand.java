@@ -1,10 +1,12 @@
 package org.dexflex.basicallycommandutils;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.command.argument.RotationArgumentType;
 import net.minecraft.command.argument.Vec3ArgumentType;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.command.CommandManager;
@@ -19,67 +21,153 @@ public class MotionCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(CommandManager.literal("motion")
-                .requires(source -> source.hasPermissionLevel(2))
-
-                // /motion set <targets> <strength> [direction]
+                .requires(src -> src.hasPermissionLevel(2))
                 .then(CommandManager.literal("set")
                         .then(CommandManager.argument("targets", EntityArgumentType.entities())
                                 .then(CommandManager.argument("strength", FloatArgumentType.floatArg())
-                                        .executes(ctx -> execute(ctx, false, null))
-                                        .then(CommandManager.argument("direction", Vec3ArgumentType.vec3())
-                                                .executes(ctx -> execute(ctx, false, Vec3ArgumentType.getVec3(ctx, "direction")))
+                                        .executes(ctx -> execute(ctx, false, null, null, null, null))
+                                        .then(CommandManager.literal("with")
+                                                .then(CommandManager.argument("vx", DoubleArgumentType.doubleArg())
+                                                        .then(CommandManager.argument("vy", DoubleArgumentType.doubleArg())
+                                                                .then(CommandManager.argument("vz", DoubleArgumentType.doubleArg())
+                                                                        .executes(ctx -> {
+                                                                            Vec3d v = new Vec3d(
+                                                                                    DoubleArgumentType.getDouble(ctx, "vx"),
+                                                                                    DoubleArgumentType.getDouble(ctx, "vy"),
+                                                                                    DoubleArgumentType.getDouble(ctx, "vz")
+                                                                            );
+                                                                            return execute(ctx, false, v, null, null, null);
+                                                                        })
+                                                                )
+                                                        )
+                                                )
                                         )
-                                ))
+                                        .then(CommandManager.literal("to")
+                                                .then(CommandManager.argument("pos", Vec3ArgumentType.vec3())
+                                                        .executes(ctx -> execute(ctx, false, null, Vec3ArgumentType.getVec3(ctx, "pos"), null, null))
+                                                )
+                                                .then(CommandManager.argument("entity", EntityArgumentType.entity())
+                                                        .executes(ctx -> execute(ctx, false, null, null, EntityArgumentType.getEntity(ctx, "entity"), null))
+                                                )
+                                        )
+                                        .then(CommandManager.literal("at")
+                                                .then(CommandManager.argument("rotation", RotationArgumentType.rotation())
+                                                        .executes(ctx -> {
+                                                            Vec2f raw = RotationArgumentType.getRotation(ctx, "rotation").toAbsoluteRotation(ctx.getSource());
+                                                            // toAbsoluteRotation returns (yaw, pitch) — rotationToDirection expects (pitch, yaw)
+                                                            Vec2f rot = new Vec2f(raw.x, raw.y);
+                                                            return execute(ctx, false, null, null, null, rot);
+                                                        })
+                                                )
+                                        )
+                                )
+                        )
                 )
 
-                // /motion add <targets> <strength> [direction]
                 .then(CommandManager.literal("add")
                         .then(CommandManager.argument("targets", EntityArgumentType.entities())
                                 .then(CommandManager.argument("strength", FloatArgumentType.floatArg())
-                                        .executes(ctx -> execute(ctx, true, null))
-                                        .then(CommandManager.argument("direction", Vec3ArgumentType.vec3())
-                                                .executes(ctx -> execute(ctx, true, Vec3ArgumentType.getVec3(ctx, "direction")))
+
+                                        .executes(ctx -> execute(ctx, true, null, null, null, null))
+                                        .then(CommandManager.literal("with")
+                                                .then(CommandManager.argument("vx", DoubleArgumentType.doubleArg())
+                                                        .then(CommandManager.argument("vy", DoubleArgumentType.doubleArg())
+                                                                .then(CommandManager.argument("vz", DoubleArgumentType.doubleArg())
+                                                                        .executes(ctx -> {
+                                                                            Vec3d v = new Vec3d(
+                                                                                    DoubleArgumentType.getDouble(ctx, "vx"),
+                                                                                    DoubleArgumentType.getDouble(ctx, "vy"),
+                                                                                    DoubleArgumentType.getDouble(ctx, "vz")
+                                                                            );
+                                                                            return execute(ctx, true, v, null, null, null);
+                                                                        })
+                                                                )
+                                                        )
+                                                )
                                         )
-                                ))
+
+                                        .then(CommandManager.literal("to")
+                                                .then(CommandManager.argument("pos", Vec3ArgumentType.vec3())
+                                                        .executes(ctx -> execute(ctx, true, null, Vec3ArgumentType.getVec3(ctx, "pos"), null, null))
+                                                )
+                                                .then(CommandManager.argument("entity", EntityArgumentType.entity())
+                                                        .executes(ctx -> execute(ctx, true, null, null, EntityArgumentType.getEntity(ctx, "entity"), null))
+                                                )
+                                        )
+
+                                        .then(CommandManager.literal("at")
+                                                .then(CommandManager.argument("rotation", RotationArgumentType.rotation())
+                                                        .executes(ctx -> {
+                                                            Vec2f raw = RotationArgumentType.getRotation(ctx, "rotation").toAbsoluteRotation(ctx.getSource());
+                                                            Vec2f rot = new Vec2f(raw.x, raw.y);
+                                                            return execute(ctx, true, null, null, null, rot);
+                                                        })
+                                                )
+                                        )
+                                )
+                        )
                 )
         );
     }
+    private static int execute(CommandContext<ServerCommandSource> ctx,
+                               boolean additive,
+                               Vec3d explicitVec,
+                               Vec3d targetPos,
+                               Entity targetEntity,
+                               Vec2f explicitRot) throws CommandSyntaxException {
+        Collection<? extends Entity> entities = EntityArgumentType.getEntities(ctx, "targets");
+        float strength = FloatArgumentType.getFloat(ctx, "strength");
 
-    private static int execute(CommandContext<ServerCommandSource> context, boolean additive, Vec3d inputDirection) throws CommandSyntaxException {
-        Collection<? extends Entity> entities = EntityArgumentType.getEntities(context, "targets");
-        float strength = FloatArgumentType.getFloat(context, "strength");
+        Vec3d uniformDir = null;
+        if (explicitVec != null) {
+            uniformDir = explicitVec.normalize().multiply(strength);
+        } else if (explicitRot != null) {
+            uniformDir = rotationToDirection(explicitRot).multiply(strength);
+        } else if (targetPos == null && targetEntity == null) {
 
-        Vec3d direction;
-        if (inputDirection != null) {
-            direction = inputDirection.normalize().multiply(strength);
-        } else {
-            Vec2f rot = context.getSource().getRotation();
-            float yawRad = (float) Math.toRadians(-rot.y);
-            float pitchRad = (float) Math.toRadians(-rot.x);
-
-            double x = Math.cos(pitchRad) * Math.sin(yawRad);
-            double y = Math.sin(pitchRad);
-            double z = Math.cos(pitchRad) * Math.cos(yawRad);
-
-            direction = new Vec3d(x, y, z).normalize().multiply(strength);
+            Vec2f rot = ctx.getSource().getRotation();
+            uniformDir = rotationToDirection(rot).multiply(strength);
         }
 
-        for (Entity entity : entities) {
-            if (additive) {
-                entity.addVelocity(direction.x, direction.y, direction.z);
-            } else {
-                Vec3d currentVel = entity.getVelocity();
-                Vec3d adjustment = direction.subtract(currentVel);
-                entity.addVelocity(adjustment.x, adjustment.y, adjustment.z);
+        int applied = 0;
+        for (Entity e : entities) {
+            Vec3d dirForEntity = uniformDir;
+
+            if (targetPos != null) {
+                Vec3d delta = targetPos.subtract(e.getPos());
+                if (delta.lengthSquared() == 0.0) continue;
+                dirForEntity = delta.normalize().multiply(strength);
+            } else if (targetEntity != null) {
+                Vec3d delta = targetEntity.getPos().subtract(e.getPos());
+                if (delta.lengthSquared() == 0.0) continue;
+                dirForEntity = delta.normalize().multiply(strength);
             }
-            entity.velocityModified = true;
-        }
 
-        context.getSource().sendFeedback(
-                () -> Text.literal((additive ? "Added" : "Set") + " motion for " + entities.size() + " entities with strength " + strength),
+            if (dirForEntity == null) continue; // should not happen, but safe
+
+            if (additive) {
+                e.addVelocity(dirForEntity.x, dirForEntity.y, dirForEntity.z);
+            } else {
+                Vec3d cur = e.getVelocity();
+                Vec3d adj = dirForEntity.subtract(cur);
+                e.addVelocity(adj.x, adj.y, adj.z);
+            }
+            e.velocityModified = true;
+            applied++;
+        }
+        final int resultCount = applied;
+        ctx.getSource().sendFeedback(
+                () -> Text.literal((additive ? "Added" : "Set") + " motion for " + resultCount + " entities"),
                 true
         );
-
-        return entities.size();
+        return applied;
+    }
+    private static Vec3d rotationToDirection(Vec2f rot) {
+        float yawRad = (float) Math.toRadians(-rot.y);
+        float pitchRad = (float) Math.toRadians(-rot.x);
+        double x = Math.cos(pitchRad) * Math.sin(yawRad);
+        double y = Math.sin(pitchRad);
+        double z = Math.cos(pitchRad) * Math.cos(yawRad);
+        return new Vec3d(x, y, z).normalize();
     }
 }

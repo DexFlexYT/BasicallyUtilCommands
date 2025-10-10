@@ -3,7 +3,6 @@ package org.dexflex.basicallycommandutils;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.command.argument.EntityAnchorArgumentType;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.MarkerEntity;
@@ -16,15 +15,15 @@ import java.util.UUID;
 
 public class RaycastCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("raycast")
-                .requires(source -> source.hasPermissionLevel(2))
-                .then(CommandManager.argument("steps", IntegerArgumentType.integer(1))
-                        .then(CommandManager.argument("step_length", FloatArgumentType.floatArg(0.01f))
-                                        .then(CommandManager.argument("command", StringArgumentType.greedyString())
-                                                .executes(ctx -> {
+        dispatcher.register(
+                CommandManager.literal("raycast")
+                        .requires(source -> source.hasPermissionLevel(2))
+                        .then(CommandManager.argument("steps", IntegerArgumentType.integer(1))
+                                .then(CommandManager.argument("step_length", FloatArgumentType.floatArg(0.01f))
+                                        .then(CommandManager.literal("run")
+                                                .redirect(dispatcher.getRoot(), ctx -> {
                                                     int steps = IntegerArgumentType.getInteger(ctx, "steps");
                                                     float stepLength = FloatArgumentType.getFloat(ctx, "step_length");
-                                                    String command = StringArgumentType.getString(ctx, "command");
                                                     ServerCommandSource source = ctx.getSource();
 
                                                     ServerWorld world = source.getWorld();
@@ -38,9 +37,13 @@ public class RaycastCommand {
                                                     marker.addCommandTag("BUC.raycast");
                                                     world.spawnEntity(marker);
 
-                                                    runRaycastStep(world, source, command, startPos, dir, stepLength, steps, 0, marker.getUuid());
+                                            // Capture parsed command node
+                                            var parsed = ctx.getNodes().getLast();
+                                            String rawCommand = ctx.getInput().substring(parsed.getRange().getStart());
 
-                                                    return 1;
+                                            runRaycastStep(world, source, rawCommand, startPos, dir, stepLength, steps, 0, marker.getUuid());
+
+                                                    return source;
                                                 })
                                         )
                                 )
