@@ -16,7 +16,7 @@ public class DistanceCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(CommandManager.literal("distance")
-                .requires(source -> source.hasPermissionLevel(0))
+                .requires(source -> source.hasPermissionLevel(4))
                 .then(CommandManager.argument("origin", Vec3ArgumentType.vec3())
                         .then(CommandManager.argument("target", Vec3ArgumentType.vec3())
                                 .executes(ctx -> executeVecs(ctx, 1.0f))
