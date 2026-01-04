@@ -7,8 +7,9 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 
-import java.util.Iterator;
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 
 public class RepeatCommand {
@@ -56,10 +57,13 @@ public class RepeatCommand {
 
     private static void registerTickHandler() {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            Iterator<ScheduledExecution> iterator = scheduledExecutions.iterator();
+            List<ScheduledExecution> toProcess = new ArrayList<>(scheduledExecutions);
 
-            while (iterator.hasNext()) {
-                ScheduledExecution scheduled = iterator.next();
+            for (ScheduledExecution scheduled : toProcess) {
+                if (!scheduledExecutions.contains(scheduled)) {
+                    continue;
+                }
+
                 scheduled.ticksRemaining--;
 
                 if (scheduled.ticksRemaining <= 0) {
@@ -74,7 +78,7 @@ public class RepeatCommand {
                     if (scheduled.executionsRemaining > 0) {
                         scheduled.ticksRemaining = scheduled.delayTicks;
                     } else {
-                        iterator.remove();
+                        scheduledExecutions.remove(scheduled);
                     }
                 }
             }

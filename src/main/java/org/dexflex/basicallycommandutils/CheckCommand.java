@@ -109,9 +109,12 @@ public class CheckCommand {
         ServerCommandSource source = ctx.getSource();
         ServerWorld world = source.getWorld();
         Entity target = EntityArgumentType.getEntity(ctx, "target");
-        Box entityBox = target.getBoundingBox();
-
-        // Search area (expand slightly beyond entity box)
+        // offset bounding box, by deez nuts
+        Box originalBox = target.getBoundingBox();
+        Vec3d entityPos = target.getPos();
+        Vec3d contextPos = source.getPosition();
+        Vec3d offset = contextPos.subtract(entityPos);
+        Box entityBox = originalBox.offset(offset);
         int minX = MathHelper.floor(entityBox.minX - 1);
         int minY = MathHelper.floor(entityBox.minY - 1);
         int minZ = MathHelper.floor(entityBox.minZ - 1);
@@ -144,7 +147,6 @@ public class CheckCommand {
                 }
             }
         }
-
         final int result = hits;
         source.sendFeedback(
                 () -> Text.literal(result > 0
@@ -152,7 +154,6 @@ public class CheckCommand {
                         : "Not found any block collisions."),
                 false
         );
-
         return result;
     }
 }
