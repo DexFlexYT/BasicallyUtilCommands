@@ -48,8 +48,6 @@ public class EvalCommand {
         return (int) scaled;
     }
 
-    // ==================== Expression Evaluator ====================
-
     private static class ExpressionEvaluator {
         private final ServerCommandSource source;
         private final Tokenizer tokenizer = new Tokenizer();
@@ -64,8 +62,6 @@ public class EvalCommand {
             return parser.parse();
         }
     }
-
-    // ==================== Tokenizer ====================
 
     private static class Tokenizer {
         private static final Pattern TOKEN_PATTERN = Pattern.compile(
@@ -90,18 +86,10 @@ public class EvalCommand {
         private TokenType typeOf(String v) {
             if (v.matches("\\d+(?:\\.\\d+)?")) return TokenType.NUMBER;
             switch (v) {
-                case "(" -> {
-                    return TokenType.LPAREN;
-                }
-                case ")" -> {
-                    return TokenType.RPAREN;
-                }
-                case "?" -> {
-                    return TokenType.QUESTION;
-                }
-                case "," -> {
-                    return TokenType.COMMA;
-                }
+                case "(" -> { return TokenType.LPAREN; }
+                case ")" -> { return TokenType.RPAREN; }
+                case "?" -> { return TokenType.QUESTION; }
+                case "," -> { return TokenType.COMMA; }
             }
             if (v.matches("[+\\-*/%^]")) return TokenType.OPERATOR;
             if (v.startsWith("@")) return TokenType.SELECTOR;
@@ -114,8 +102,6 @@ public class EvalCommand {
     }
 
     private record Token(TokenType type, String value) {}
-
-    // ==================== Parser ====================
 
     private static class Parser {
         private final List<Token> tokens;
@@ -135,12 +121,10 @@ public class EvalCommand {
             return v;
         }
 
-        // expression -> addSub
         private double expression() throws CommandSyntaxException {
             return addSub();
         }
 
-        // addSub -> mulDiv ((+|-) mulDiv)*
         private double addSub() throws CommandSyntaxException {
             double v = mulDiv();
             while (pos < tokens.size()) {
@@ -153,7 +137,6 @@ public class EvalCommand {
             return v;
         }
 
-        // mulDiv -> power ((*|/|%) power)*
         private double mulDiv() throws CommandSyntaxException {
             double v = power();
             while (pos < tokens.size()) {
@@ -170,7 +153,6 @@ public class EvalCommand {
             return v;
         }
 
-        // power -> unary (^ power)?  (right associative)
         private double power() throws CommandSyntaxException {
             double v = unary();
             if (pos < tokens.size()) {
@@ -183,7 +165,6 @@ public class EvalCommand {
             return v;
         }
 
-        // unary -> (+|-) unary | primary
         private double unary() throws CommandSyntaxException {
             if (pos < tokens.size()) {
                 Token t = tokens.get(pos);
@@ -196,9 +177,11 @@ public class EvalCommand {
             return primary();
         }
 
-        // primary
         private double primary() throws CommandSyntaxException {
-            if (pos >= tokens.size()) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.readerExpectedDouble().create();
+            if (pos >= tokens.size()) {
+                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.readerExpectedDouble().create();
+            }
+
             Token t = tokens.get(pos);
 
             if (t.type == TokenType.LPAREN) {
@@ -216,35 +199,27 @@ public class EvalCommand {
             if (t.type == TokenType.IDENTIFIER) {
                 String name = t.value.toLowerCase();
 
-                // constant
                 if (name.equals("pi")) {
                     pos++;
                     return Math.PI;
                 }
 
-                // function
                 if (peek(TokenType.LPAREN, 1)) {
-                    pos += 2; // name + (
+                    pos += 2;
                     List<Double> args = functionArgs();
                     return evalFunction(name, args);
                 }
-
-                // scoreboard ref
-                if (peek(TokenType.QUESTION, 1)) {
-                    return scoreRef(t.value);
-                }
             }
 
-            if (t.type == TokenType.SELECTOR) {
-                if (peek(TokenType.QUESTION, 1)) {
-                    return scoreRef(t.value);
-                }
+            if (isBareScoreRef()) {
+                List<Double> v = scoreRefList();
+                if (v.isEmpty()) return 0.0;
+                return v.stream().mapToDouble(d -> d).average().orElse(0.0);
             }
 
             throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
         }
 
-        // ---------- functions ----------
 
         private List<Double> functionArgs() throws CommandSyntaxException {
             List<Double> out = new ArrayList<>();
@@ -254,26 +229,56 @@ public class EvalCommand {
                 return out;
             }
 
-            out.add(expression());
+            out.addAll(argument());
             while (peek(TokenType.COMMA, 0)) {
                 pos++;
-                out.add(expression());
+                out.addAll(argument());
             }
 
             expect(TokenType.RPAREN);
             return out;
         }
 
-        // ---------- scoreboard ----------
+        private List<Double> argument() throws CommandSyntaxException {
+            if (isBareScoreRef()) {
+                int after = pos + 3;
+                if (after >= tokens.size()
+                        || tokens.get(after).type == TokenType.COMMA
+                        || tokens.get(after).type == TokenType.RPAREN) {
+                    return scoreRefList();
+                }
+            }
+            return List.of(expression());
+        }
 
-        private double scoreRef(String target) throws CommandSyntaxException {
-            pos++; // name/selector
+
+
+        private boolean isBareScoreRef() {
+            if (pos + 2 >= tokens.size()) return false;
+            Token a = tokens.get(pos);
+            Token b = tokens.get(pos + 1);
+            Token c = tokens.get(pos + 2);
+            return (a.type == TokenType.IDENTIFIER || a.type == TokenType.SELECTOR)
+                    && b.type == TokenType.QUESTION
+                    && c.type == TokenType.IDENTIFIER;
+        }
+
+        private double scoreRefAverage(String target) throws CommandSyntaxException {
+            List<Double> v = scoreRefList(target);
+            if (v.isEmpty()) return 0.0;
+            return v.stream().mapToDouble(d -> d).average().orElse(0.0);
+        }
+
+        private List<Double> scoreRefList() throws CommandSyntaxException {
+            Token t = tokens.get(pos);
+            return scoreRefList(t.value);
+        }
+
+        private List<Double> scoreRefList(String target) throws CommandSyntaxException {
+            pos++;
             expect(TokenType.QUESTION);
             Token obj = expect(TokenType.IDENTIFIER);
-
-            List<Double> vals = getScores(target, obj.value);
-            if (vals.isEmpty()) return 0.0;
-            return vals.stream().mapToDouble(d -> d).average().orElse(0.0);
+            return getScores(target, obj.value);
         }
 
         private List<Double> getScores(String target, String objective) throws CommandSyntaxException {
@@ -303,8 +308,6 @@ public class EvalCommand {
             return out;
         }
 
-        // ---------- helpers ----------
-
         private boolean peek(TokenType t, int off) {
             int i = pos + off;
             return i < tokens.size() && tokens.get(i).type == t;
@@ -315,9 +318,6 @@ public class EvalCommand {
                 throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
             return tokens.get(pos++);
         }
-
-        // ---------- functions impl ----------
-
         private double evalFunction(String name, List<Double> a) throws CommandSyntaxException {
             return switch (name) {
                 case "min" -> a.stream().mapToDouble(d -> d).min().orElseThrow();
