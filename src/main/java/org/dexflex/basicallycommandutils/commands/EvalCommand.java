@@ -1,15 +1,16 @@
 package org.dexflex.basicallycommandutils.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.StringReader;
+import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.scoreboard.ScoreAccess;
 import net.minecraft.scoreboard.ScoreHolder;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
-import net.minecraft.scoreboard.ScoreAccess;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
@@ -23,7 +24,7 @@ public class EvalCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(CommandManager.literal("eval")
                 .requires(source -> source.hasPermissionLevel(2))
-                .then(CommandManager.argument("scale", IntegerArgumentType.integer(1))
+                .then(CommandManager.argument("scale", FloatArgumentType.floatArg())
                         .then(CommandManager.argument("expression", StringArgumentType.greedyString())
                                 .executes(EvalCommand::execute)
                         )
@@ -32,30 +33,29 @@ public class EvalCommand {
     }
 
     private static int execute(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
-        int scale = IntegerArgumentType.getInteger(context, "scale");
+        float scale = FloatArgumentType.getFloat(context, "scale");
         String expression = StringArgumentType.getString(context, "expression");
 
         ExpressionEvaluator evaluator = new ExpressionEvaluator(context.getSource());
         double result = evaluator.evaluate(expression);
-        int scaledResult = (int) (result * scale);
+        double scaled = result * scale;
 
         context.getSource().sendFeedback(
-                () -> Text.literal("Result: " + result + " (scaled: " + scaledResult + ")"),
+                () -> Text.literal("Result: " + result + " (scaled: " + scaled + ")"),
                 false
         );
 
-        return scaledResult;
+        return (int) scaled;
     }
 
     // ==================== Expression Evaluator ====================
 
     private static class ExpressionEvaluator {
         private final ServerCommandSource source;
-        private final Tokenizer tokenizer;
+        private final Tokenizer tokenizer = new Tokenizer();
 
         public ExpressionEvaluator(ServerCommandSource source) {
             this.source = source;
-            this.tokenizer = new Tokenizer();
         }
 
         public double evaluate(String expression) throws CommandSyntaxException {
@@ -69,12 +69,11 @@ public class EvalCommand {
 
     private static class Tokenizer {
         private static final Pattern TOKEN_PATTERN = Pattern.compile(
-                "\\d+(?:\\.\\d+)?|" +                  // Numbers (with optional decimals)
-                        "@[aeprs](?:\\[[^]]*])?|" +        // Selectors with optional brackets
-                        "[a-zA-Z_#][a-zA-Z0-9_]*|" +           // Identifiers/functions/names (including # for fake players)
-                        "[+\\-*/%^()]|" +                      // Operators and parens
-                        "\\?|" +                               // Scoreboard separator
-                        ","                                    // Comma for function args
+                "\\d+(?:\\.\\d+)?|" +
+                        "@[aeprs](?:\\[[^]]*])?|" +
+                        "[a-zA-Z_#][a-zA-Z0-9_]*|" +
+                        "[+\\-*/%^()]|" +
+                        "\\?|,"
         );
 
         public List<Token> tokenize(String input) {
@@ -82,19 +81,15 @@ public class EvalCommand {
             Matcher matcher = TOKEN_PATTERN.matcher(input);
 
             while (matcher.find()) {
-                String value = matcher.group();
-                if (!value.trim().isEmpty()) {
-                    tokens.add(new Token(getTokenType(value), value));
-                }
+                String v = matcher.group();
+                tokens.add(new Token(typeOf(v), v));
             }
-
             return tokens;
         }
 
-        private TokenType getTokenType(String value) {
-            if (value.matches("\\d+(?:\\.\\d+)?")) return TokenType.NUMBER;
-            if (value.matches("[+\\-*/%^]")) return TokenType.OPERATOR;
-            switch (value) {
+        private TokenType typeOf(String v) {
+            if (v.matches("\\d+(?:\\.\\d+)?")) return TokenType.NUMBER;
+            switch (v) {
                 case "(" -> {
                     return TokenType.LPAREN;
                 }
@@ -108,7 +103,8 @@ public class EvalCommand {
                     return TokenType.COMMA;
                 }
             }
-            if (value.startsWith("@")) return TokenType.SELECTOR;
+            if (v.matches("[+\\-*/%^]")) return TokenType.OPERATOR;
+            if (v.startsWith("@")) return TokenType.SELECTOR;
             return TokenType.IDENTIFIER;
         }
     }
@@ -117,370 +113,235 @@ public class EvalCommand {
         NUMBER, OPERATOR, LPAREN, RPAREN, IDENTIFIER, SELECTOR, QUESTION, COMMA
     }
 
-    private static class Token {
-        final TokenType type;
-        final String value;
-
-        Token(TokenType type, String value) {
-            this.type = type;
-            this.value = value;
-        }
-
-        @Override
-        public String toString() {
-            return type + ":" + value;
-        }
-    }
+    private record Token(TokenType type, String value) {}
 
     // ==================== Parser ====================
 
     private static class Parser {
         private final List<Token> tokens;
         private final ServerCommandSource source;
-        private int position = 0;
+        private int pos = 0;
 
-        public Parser(List<Token> tokens, ServerCommandSource source) {
+        Parser(List<Token> tokens, ServerCommandSource source) {
             this.tokens = tokens;
             this.source = source;
         }
 
-        public double parse() throws CommandSyntaxException {
-            double result = parseExpression();
-            if (position < tokens.size()) {
+        double parse() throws CommandSyntaxException {
+            double v = expression();
+            if (pos != tokens.size()) {
                 throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
             }
-            return result;
+            return v;
         }
 
-        private double parseExpression() throws CommandSyntaxException {
-            return parseAddSub();
+        // expression -> addSub
+        private double expression() throws CommandSyntaxException {
+            return addSub();
         }
 
-        private double parseAddSub() throws CommandSyntaxException {
-            double left = parseMulDiv();
-
-            while (position < tokens.size()) {
-                Token token = tokens.get(position);
-                if (token.type != TokenType.OPERATOR) break;
-                if (!token.value.equals("+") && !token.value.equals("-")) break;
-
-                position++;
-                double right = parseMulDiv();
-
-                if (token.value.equals("+")) {
-                    left = left + right;
-                } else {
-                    left = left - right;
-                }
+        // addSub -> mulDiv ((+|-) mulDiv)*
+        private double addSub() throws CommandSyntaxException {
+            double v = mulDiv();
+            while (pos < tokens.size()) {
+                Token t = tokens.get(pos);
+                if (t.type != TokenType.OPERATOR || !(t.value.equals("+") || t.value.equals("-"))) break;
+                pos++;
+                double r = mulDiv();
+                v = t.value.equals("+") ? v + r : v - r;
             }
-
-            return left;
+            return v;
         }
 
-        private double parseMulDiv() throws CommandSyntaxException {
-            double left = parsePower();
-
-            while (position < tokens.size()) {
-                Token token = tokens.get(position);
-                if (token.type != TokenType.OPERATOR) break;
-                if (!token.value.equals("*") && !token.value.equals("/") && !token.value.equals("%")) break;
-
-                position++;
-                double right = parsePower();
-
-                switch (token.value) {
-                    case "*" -> left = left * right;
-                    case "/" -> {
-                        if (right == 0) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                        left = left / right;
-                    }
-                    case "%" -> {
-                        if (right == 0) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                        left = left % right;
-                    }
+        // mulDiv -> power ((*|/|%) power)*
+        private double mulDiv() throws CommandSyntaxException {
+            double v = power();
+            while (pos < tokens.size()) {
+                Token t = tokens.get(pos);
+                if (t.type != TokenType.OPERATOR || !(t.value.equals("*") || t.value.equals("/") || t.value.equals("%"))) break;
+                pos++;
+                double r = power();
+                switch (t.value) {
+                    case "*" -> v *= r;
+                    case "/" -> v /= r;
+                    case "%" -> v %= r;
                 }
             }
-
-            return left;
+            return v;
         }
 
-        private double parsePower() throws CommandSyntaxException {
-            double left = parseUnary();
-
-            if (position < tokens.size()) {
-                Token token = tokens.get(position);
-                if (token.type == TokenType.OPERATOR && token.value.equals("^")) {
-                    position++;
-                    double right = parsePower(); // Right associative
-                    return Math.pow(left, right);
+        // power -> unary (^ power)?  (right associative)
+        private double power() throws CommandSyntaxException {
+            double v = unary();
+            if (pos < tokens.size()) {
+                Token t = tokens.get(pos);
+                if (t.type == TokenType.OPERATOR && t.value.equals("^")) {
+                    pos++;
+                    v = Math.pow(v, power());
                 }
             }
-
-            return left;
+            return v;
         }
 
-        private double parseUnary() throws CommandSyntaxException {
-            if (position < tokens.size()) {
-                Token token = tokens.get(position);
-                if (token.type == TokenType.OPERATOR && (token.value.equals("+") || token.value.equals("-"))) {
-                    position++;
-                    double value = parseUnary();
-                    return token.value.equals("-") ? -value : value;
+        // unary -> (+|-) unary | primary
+        private double unary() throws CommandSyntaxException {
+            if (pos < tokens.size()) {
+                Token t = tokens.get(pos);
+                if (t.type == TokenType.OPERATOR && (t.value.equals("+") || t.value.equals("-"))) {
+                    pos++;
+                    double v = unary();
+                    return t.value.equals("-") ? -v : v;
                 }
             }
-
-            return parsePrimary();
+            return primary();
         }
 
-        private double parsePrimary() throws CommandSyntaxException {
-            if (position >= tokens.size()) {
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.readerExpectedDouble().create();
+        // primary
+        private double primary() throws CommandSyntaxException {
+            if (pos >= tokens.size()) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.readerExpectedDouble().create();
+            Token t = tokens.get(pos);
+
+            if (t.type == TokenType.LPAREN) {
+                pos++;
+                double v = expression();
+                expect(TokenType.RPAREN);
+                return v;
             }
 
-            Token token = tokens.get(position);
-
-            // Parentheses
-            if (token.type == TokenType.LPAREN) {
-                position++;
-                double value = parseExpression();
-                if (position >= tokens.size() || tokens.get(position).type != TokenType.RPAREN) {
-                    throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
-                }
-                position++;
-                return value;
+            if (t.type == TokenType.NUMBER) {
+                pos++;
+                return Double.parseDouble(t.value);
             }
 
-            // Numbers
-            if (token.type == TokenType.NUMBER) {
-                position++;
-                return Double.parseDouble(token.value);
-            }
+            if (t.type == TokenType.IDENTIFIER) {
+                String name = t.value.toLowerCase();
 
-            // Selectors - must be followed by ?objective
-            if (token.type == TokenType.SELECTOR) {
-                if (position + 1 < tokens.size() && tokens.get(position + 1).type == TokenType.QUESTION) {
-                    return parseScoreboardRef(token.value);
-                }
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
-            }
-
-            // Identifiers - can be: pi constant, function call, or scoreboard reference
-            if (token.type == TokenType.IDENTIFIER) {
-                String name = token.value;
-                String nameLower = name.toLowerCase();
-
-                // Check for pi constant
-                if (nameLower.equals("pi")) {
-                    position++;
+                // constant
+                if (name.equals("pi")) {
+                    pos++;
                     return Math.PI;
                 }
 
-                // Check if it's a function call
-                if (position + 1 < tokens.size() && tokens.get(position + 1).type == TokenType.LPAREN) {
-                    position += 2; // Skip function name and (
-                    List<Double> args = parseFunctionArgs();
-                    return evaluateFunction(nameLower, args);
+                // function
+                if (peek(TokenType.LPAREN, 1)) {
+                    pos += 2; // name + (
+                    List<Double> args = functionArgs();
+                    return evalFunction(name, args);
                 }
 
-                // Check if it's a scoreboard reference (name?objective)
-                if (position + 1 < tokens.size() && tokens.get(position + 1).type == TokenType.QUESTION) {
-                    return parseScoreboardRef(name);
-                }
-
-                // If none of the above, it's an error
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
-            }
-
-            throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.readerExpectedDouble().create();
-        }
-
-        private List<Double> parseFunctionArgs() throws CommandSyntaxException {
-            List<Double> args = new ArrayList<>();
-
-            // Check for empty args
-            if (position < tokens.size() && tokens.get(position).type == TokenType.RPAREN) {
-                position++;
-                return args;
-            }
-
-            // Parse first arg (can be list from selector)
-            args.addAll(parseArgument());
-
-            // Parse remaining args
-            while (position < tokens.size() && tokens.get(position).type == TokenType.COMMA) {
-                position++; // Skip comma
-                args.addAll(parseArgument());
-            }
-
-            // Expect closing paren
-            if (position >= tokens.size() || tokens.get(position).type != TokenType.RPAREN) {
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
-            }
-            position++;
-
-            return args;
-        }
-
-        private List<Double> parseArgument() throws CommandSyntaxException {
-            // Check if this is a scoreboard reference that should expand to a list
-            if (position < tokens.size()) {
-                Token token = tokens.get(position);
-                if ((token.type == TokenType.IDENTIFIER || token.type == TokenType.SELECTOR) &&
-                        position + 1 < tokens.size() &&
-                        tokens.get(position + 1).type == TokenType.QUESTION) {
-                    return parseScoreboardRefList(token.value);
+                // scoreboard ref
+                if (peek(TokenType.QUESTION, 1)) {
+                    return scoreRef(t.value);
                 }
             }
 
-            // Otherwise parse as regular expression (returns single value)
-            return List.of(parseExpression());
-        }
-
-        private double parseScoreboardRef(String selector) throws CommandSyntaxException {
-            // Must consume the identifier/selector token first
-            position++;
-
-            // Expect ? followed by objective name
-            if (position >= tokens.size() || tokens.get(position).type != TokenType.QUESTION) {
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
-            }
-            position++;
-
-            if (position >= tokens.size() || tokens.get(position).type != TokenType.IDENTIFIER) {
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
-            }
-
-            String objective = tokens.get(position).value;
-            position++;
-
-            // Get scores - if selector returns multiple entities, average them
-            List<Double> scores = getScoreboardValues(selector, objective);
-            if (scores.isEmpty()) {
-                return 0.0;
-            }
-            return scores.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-        }
-
-        private List<Double> parseScoreboardRefList(String selector) throws CommandSyntaxException {
-            // Must consume the identifier/selector token first
-            position++;
-
-            // Expect ? followed by objective name
-            if (position >= tokens.size() || tokens.get(position).type != TokenType.QUESTION) {
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
-            }
-            position++;
-
-            if (position >= tokens.size() || tokens.get(position).type != TokenType.IDENTIFIER) {
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
-            }
-
-            String objective = tokens.get(position).value;
-            position++;
-
-            return getScoreboardValues(selector, objective);
-        }
-
-        private List<Double> getScoreboardValues(String selector, String objectiveName) throws CommandSyntaxException {
-            Scoreboard scoreboard = source.getServer().getScoreboard();
-            ScoreboardObjective objective = scoreboard.getNullableObjective(objectiveName);
-
-            if (objective == null) {
-                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-            }
-
-            List<String> holders = resolveSelector(selector);
-            List<Double> values = new ArrayList<>();
-
-            for (String holder : holders) {
-                ScoreHolder scoreHolder = ScoreHolder.fromName(holder);
-                ScoreAccess score = scoreboard.getOrCreateScore(scoreHolder, objective);
-                values.add((double) score.getScore());
-            }
-
-            return values;
-        }
-
-        private List<String> resolveSelector(String selector) throws CommandSyntaxException {
-            // If it's not a selector, treat it as a direct name (fake player or real player name)
-            if (!selector.startsWith("@")) {
-                return List.of(selector);
-            }
-
-            // Parse the selector using Minecraft's entity argument parser
-            try {
-                Collection<? extends net.minecraft.entity.Entity> entities =
-                        EntityArgumentType.entities().parse(new com.mojang.brigadier.StringReader(selector))
-                                .getEntities(source);
-
-                List<String> names = new ArrayList<>();
-                for (net.minecraft.entity.Entity entity : entities) {
-                    names.add(entity.getNameForScoreboard());
+            if (t.type == TokenType.SELECTOR) {
+                if (peek(TokenType.QUESTION, 1)) {
+                    return scoreRef(t.value);
                 }
-                return names;
-            } catch (CommandSyntaxException e) {
-                throw e;
             }
+
+            throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
         }
 
-        private double evaluateFunction(String name, List<Double> args) throws CommandSyntaxException {
+        // ---------- functions ----------
+
+        private List<Double> functionArgs() throws CommandSyntaxException {
+            List<Double> out = new ArrayList<>();
+
+            if (peek(TokenType.RPAREN, 0)) {
+                pos++;
+                return out;
+            }
+
+            out.add(expression());
+            while (peek(TokenType.COMMA, 0)) {
+                pos++;
+                out.add(expression());
+            }
+
+            expect(TokenType.RPAREN);
+            return out;
+        }
+
+        // ---------- scoreboard ----------
+
+        private double scoreRef(String target) throws CommandSyntaxException {
+            pos++; // name/selector
+            expect(TokenType.QUESTION);
+            Token obj = expect(TokenType.IDENTIFIER);
+
+            List<Double> vals = getScores(target, obj.value);
+            if (vals.isEmpty()) return 0.0;
+            return vals.stream().mapToDouble(d -> d).average().orElse(0.0);
+        }
+
+        private List<Double> getScores(String target, String objective) throws CommandSyntaxException {
+            Scoreboard board = source.getServer().getScoreboard();
+            ScoreboardObjective obj = board.getNullableObjective(objective);
+            if (obj == null) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
+
+            List<String> holders = resolveTargets(target);
+            List<Double> out = new ArrayList<>();
+
+            for (String h : holders) {
+                ScoreHolder holder = ScoreHolder.fromName(h);
+                ScoreAccess s = board.getOrCreateScore(holder, obj);
+                out.add((double) s.getScore());
+            }
+            return out;
+        }
+
+        private List<String> resolveTargets(String target) throws CommandSyntaxException {
+            if (!target.startsWith("@")) return List.of(target);
+
+            Collection<? extends net.minecraft.entity.Entity> entities =
+                    EntityArgumentType.entities().parse(new StringReader(target)).getEntities(source);
+
+            List<String> out = new ArrayList<>();
+            for (var e : entities) out.add(e.getNameForScoreboard());
+            return out;
+        }
+
+        // ---------- helpers ----------
+
+        private boolean peek(TokenType t, int off) {
+            int i = pos + off;
+            return i < tokens.size() && tokens.get(i).type == t;
+        }
+
+        private Token expect(TokenType t) throws CommandSyntaxException {
+            if (pos >= tokens.size() || tokens.get(pos).type != t)
+                throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
+            return tokens.get(pos++);
+        }
+
+        // ---------- functions impl ----------
+
+        private double evalFunction(String name, List<Double> a) throws CommandSyntaxException {
             return switch (name) {
-                case "min" -> {
-                    if (args.isEmpty()) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield args.stream().mapToDouble(Double::doubleValue).min().orElse(0.0);
-                }
-                case "max" -> {
-                    if (args.isEmpty()) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield args.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
-                }
-                case "sum" -> args.stream().mapToDouble(Double::doubleValue).sum();
-                case "avg" -> {
-                    if (args.isEmpty()) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield args.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-                }
-                case "len" -> (double) args.size();
-                case "abs" -> {
-                    if (args.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.abs(args.getFirst());
-                }
-                case "floor" -> {
-                    if (args.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.floor(args.getFirst());
-                }
-                case "ceil" -> {
-                    if (args.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.ceil(args.getFirst());
-                }
-                case "round" -> {
-                    if (args.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield (double) Math.round(args.getFirst());
-                }
-                case "sqrt" -> {
-                    if (args.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.sqrt(args.getFirst());
-                }
-                case "pow" -> {
-                    if (args.size() != 2) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.pow(args.get(0), args.get(1));
-                }
-                case "sin" -> {
-                    if (args.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.sin(args.getFirst());
-                }
-                case "cos" -> {
-                    if (args.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.cos(args.getFirst());
-                }
-                case "tan" -> {
-                    if (args.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.tan(args.getFirst());
-                }
-                case "clamp" -> {
-                    if (args.size() != 3) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
-                    yield Math.max(args.get(1), Math.min(args.get(2), args.get(0)));
-                }
+                case "min" -> a.stream().mapToDouble(d -> d).min().orElseThrow();
+                case "max" -> a.stream().mapToDouble(d -> d).max().orElseThrow();
+                case "sum" -> a.stream().mapToDouble(d -> d).sum();
+                case "avg" -> a.stream().mapToDouble(d -> d).average().orElse(0);
+                case "len" -> a.size();
+                case "abs" -> Math.abs(one(a));
+                case "floor" -> Math.floor(one(a));
+                case "ceil" -> Math.ceil(one(a));
+                case "round" -> Math.round(one(a));
+                case "sqrt" -> Math.sqrt(one(a));
+                case "pow" -> Math.pow(a.get(0), a.get(1));
+                case "sin" -> Math.sin(one(a));
+                case "cos" -> Math.cos(one(a));
+                case "tan" -> Math.tan(one(a));
+                case "clamp" -> Math.max(a.get(1), Math.min(a.get(2), a.get(0)));
                 default -> throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().create();
             };
+        }
+
+        private double one(List<Double> a) throws CommandSyntaxException {
+            if (a.size() != 1) throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
+            return a.getFirst();
         }
     }
 }
