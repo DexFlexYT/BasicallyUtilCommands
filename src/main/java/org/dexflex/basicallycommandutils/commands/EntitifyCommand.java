@@ -1,4 +1,4 @@
-package org.dexflex.basicallycommandutils;
+package org.dexflex.basicallycommandutils.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -76,19 +76,6 @@ public class EntitifyCommand {
                     .getDispatcher()
                     .execute(String.format("summon block_display %f %f %f %s", x, y, z, nbt), source.withSilent());
         }
-        /*
-        else if (entityType.equals("item_display")) {
-            String itemId = Registries.ITEM.getId(blockState.getBlock().asItem()).toString();
-            String nbt = String.format(
-                "{Item:{id:\"%s\",Count:1b},Tags:[\"%s\"]}",
-                itemId, tagToUse
-            );
-            source.getServer()
-                  .getCommandManager()
-                  .getDispatcher()
-                  .execute(String.format("summon item_display %f %f %f %s", x, y, z, nbt), source.withSilent());
-        }
-        */
         else {
             source.sendError(Text.literal("Invalid type. Use falling_block or block_display."));
             return 0;
