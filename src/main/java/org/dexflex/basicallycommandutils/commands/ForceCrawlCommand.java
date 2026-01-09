@@ -1,4 +1,4 @@
-package org.dexflex.basicallycommandutils;
+package org.dexflex.basicallycommandutils.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.command.argument.EntityArgumentType;

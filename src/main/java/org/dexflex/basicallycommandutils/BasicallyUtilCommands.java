@@ -2,6 +2,7 @@ package org.dexflex.basicallycommandutils;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import org.dexflex.basicallycommandutils.commands.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +25,7 @@ public class BasicallyUtilCommands implements ModInitializer {
 			ForceCrawlCommand.register(dispatcher);
 			GetBlockCommand.register(dispatcher);
             RepeatCommand.register(dispatcher);
+            EvalCommand.register(dispatcher);
 		});
 		LOGGER.info("BasicallyUtilCommands initialized");
 	}
