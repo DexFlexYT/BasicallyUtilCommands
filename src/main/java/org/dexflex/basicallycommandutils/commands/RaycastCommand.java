@@ -24,7 +24,14 @@ public class RaycastCommand {
                                         .fork(dispatcher.getRoot(), ctx -> {
                                             int steps = IntegerArgumentType.getInteger(ctx, "steps");
                                             float stepLength = FloatArgumentType.getFloat(ctx, "step_length");
-                                            String command = ctx.getInput().substring(ctx.getInput().indexOf("run") + 4);
+
+                                            // Fixed: Get command text after the current command's arguments
+                                            String fullInput = ctx.getInput();
+                                            String command = fullInput.substring(ctx.getRange().getEnd()).trim();
+                                            if (command.startsWith("run ")) {
+                                                command = command.substring(4);
+                                            }
+
                                             ServerCommandSource source = ctx.getSource();
 
                                             ServerWorld world = source.getWorld();
