@@ -6,7 +6,7 @@ import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.command.EntitySelectorReader;
 import net.minecraft.scoreboard.ScoreAccess;
 import net.minecraft.scoreboard.ScoreHolder;
 import net.minecraft.scoreboard.Scoreboard;
@@ -323,7 +323,9 @@ public class EvalCommand {
             if (!target.startsWith("@")) return List.of(target);
 
             Collection<? extends net.minecraft.entity.Entity> entities =
-                    EntityArgumentType.entities().parse(new StringReader(target)).getEntities(source);
+                    new EntitySelectorReader(new StringReader(target), true)
+                            .read()
+                            .getEntities(source);
 
             List<String> out = new ArrayList<>();
             for (var e : entities) out.add(e.getNameForScoreboard());
