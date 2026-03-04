@@ -3,7 +3,8 @@
   "package": "org.dexflex.basicallycommandutils.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "PlayerNbtMixin"
+    "PlayerNbtMixin",
+    "LevelPropertiesAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

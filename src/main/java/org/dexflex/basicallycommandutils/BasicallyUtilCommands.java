@@ -26,6 +26,7 @@ public class BasicallyUtilCommands implements ModInitializer {
 			GetBlockCommand.register(dispatcher);
             RepeatCommand.register(dispatcher);
             EvalCommand.register(dispatcher);
+			SetGametimeCommand.register(dispatcher);
 		});
 		LOGGER.info("BasicallyUtilCommands initialized");
 	}
